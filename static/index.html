@@ -1,0 +1,32 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chat</title>
+<style>
+body{font:15px system-ui;margin:0;display:flex;flex-direction:column;height:100dvh;max-width:640px;margin-inline:auto}
+#log{flex:1;overflow:auto;padding:12px}.m{margin:8px 0;padding:8px 12px;border-radius:10px;max-width:85%;white-space:pre-wrap}
+.user{background:#2563eb;color:#fff;margin-left:auto}.bot{background:#eee;color:#111}.err{background:#fee;color:#900}
+form{display:flex;gap:8px;padding:12px;border-top:1px solid #ddd}input{flex:1;padding:10px;font:inherit}
+</style>
+<div id="log" aria-live="polite"></div>
+<form id="f"><input id="i" maxlength="4000" placeholder="Ask something…" autocomplete="off"><button id="b">Send</button></form>
+<script>
+// The host app supplies a short-lived user token (window.CHAT_TOKEN). No LLM keys exist client-side.
+let cid=null,last=null;const log=document.getElementById("log");
+const add=(c,t)=>{const d=document.createElement("div");d.className="m "+c;d.textContent=t;log.append(d);log.scrollTop=1e9;return d};
+async function send(text,key){
+  const bot=add("bot","…");
+  try{
+    const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+window.CHAT_TOKEN},
+      body:JSON.stringify({message:text,conversation_id:cid,idempotency_key:key,stream:true})});
+    if(!r.ok){throw new Error((await r.json()).error.message)}
+    const rd=r.body.getReader(),dec=new TextDecoder();let buf="",out="";
+    for(;;){const{done,value}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});
+      let i;while((i=buf.indexOf("\n\n"))>=0){const blk=buf.slice(0,i);buf=buf.slice(i+2);
+        const ev=/event: (\w+)/.exec(blk)[1],data=JSON.parse(/data: (.*)/.exec(blk)[1]);
+        if(ev==="meta")cid=data.conversation_id;
+        if(ev==="delta"){out+=data.text;bot.textContent=out}
+        if(ev==="error")throw new Error(data.message)}}
+  }catch(e){bot.className="m err";bot.textContent=e.message+" ";const b=document.createElement("button");
+    b.textContent="Retry";b.onclick=()=>{bot.remove();send(text,key)};bot.append(b)}
+}
+f.onsubmit=e=>{e.preventDefault();const t=i.value.trim();if(!t)return;i.value="";add("user",t);send(t,crypto.randomUUID())};
+</script>

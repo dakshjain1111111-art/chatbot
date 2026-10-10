@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+chat.db
+.env
+.DS_Store
